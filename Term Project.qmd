@@ -98,7 +98,7 @@ q_inf_A <- 5750.0
 
 # Compute aerodynamic force vectors, skin friction ratios, and filter out startup transient
 cfd_aero <- cfd_tidy |>
-  filter(Time >= 1.25) |>
+  filter(Time >= 0.25) |>
   mutate(
     aoa_rad  = AOA * pi / 180,
     # Total Cartesian Force Vectors (F_x, F_y)
@@ -136,7 +136,7 @@ aero_summary <- cfd_aero |>
     .groups = "drop"
   )
 
-
+glimpse(aero_summary)
 ```
 
 ## Exploratory Data Analysis Plots
@@ -179,6 +179,9 @@ cfd_aero |>
   ggplot(aes(x = Fp_mag, y = Fv_mag, color = Config)) +
   geom_point(alpha = 0.4, size = 1.2) +
   facet_wrap(~ AOA_fac, scales = "free") +
+  scale_x_continuous(
+  n.breaks = 4,
+  labels   = scales::label_number(scale = 1e-3, suffix = "k"))+
   labs(
     title = "Pressure Force (||F_p||) vs. Viscous Skin Friction Force (||F_v||)",
     subtitle = "Phase distribution across all 12 simulation cases partitioned by Angle of Attack",
