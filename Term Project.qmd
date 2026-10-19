@@ -96,7 +96,7 @@ cfd_tidy <- bind_rows(
 # Reference scaling factor (Dynamic Pressure * Planform Area)
 q_inf_A <- 5750.0
 
-# Compute aerodynamic force vectors, skin friction ratios, and filter out startup transient (Time >= 0.25)
+# Compute aerodynamic force vectors, skin friction ratios, and filter out startup transient
 cfd_aero <- cfd_tidy |>
   filter(Time >= 1.25) |>
   mutate(
@@ -141,7 +141,7 @@ aero_summary <- cfd_aero |>
 
 ## Exploratory Data Analysis Plots
 
-```{r, fig.width=10, fig.height=6}
+```{r}
 # Reshape F_x and F_y for multi-panel time-series visualization
 cfd_aero |>
   filter(Mesh == "Fine") |>
@@ -175,7 +175,7 @@ cfd_aero |>
   theme_minimal()
 
 # Commparison of Pressure vs. Viscous Force Magnitudes
-p_pv <- cfd_aero |>
+cfd_aero |>
   ggplot(aes(x = Fp_mag, y = Fv_mag, color = Config)) +
   geom_point(alpha = 0.4, size = 1.2) +
   facet_wrap(~ AOA_fac, scales = "free") +
@@ -187,7 +187,7 @@ p_pv <- cfd_aero |>
     color = "Dataset Configuration"
   ) + theme_minimal()
 
-print(p_pv)
+
 
 # Skin Friction Ratio comparison across Angles of Attack
 cfd_aero |>
