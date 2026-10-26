@@ -1,15 +1,20 @@
 ---
 title: "CFD Project"
-format: html
+format: 
+  html:
+    theme: cosmo
+    toc: true
+    code-fold: show
 author: Donovan McMillan
 editor: visual
+execute:
+  warning: false
+  message: false
 ---
 
 ## Introduction
 
-The goal of this project is to perform of a statistical analysis of a High-Fidelity Simulation Aerodynamics Dataset of NACA 0012 and 0021 airfoils. The primary goal of this project is to evaluate how geometric thickness (NACA 0012 vs. NACA 0021) and flow conditions interact to influence load vector fluctuations. If this is completed, an additional analysis will be done to evaluate how simulation mesh resolution (coarse, medium, fine) of NACA 0021 affects prediction error.
-
-
+The goal of this project is to perform a statistical analysis of a High-Fidelity Simulation Aerodynamics Dataset of NACA 0012 and 0021 airfoils. The primary goal of this project is to evaluate how geometric thickness (NACA 0012 vs. NACA 0021) and flow conditions interact to influence load vector fluctuations. An additional analysis will be done to evaluate how simulation mesh resolution (medium, fine) of NACA 0012 affects prediction error relative to experimental wind tunnel benchmarks.
 
 ```{r}
 # Load Libraries
@@ -18,18 +23,19 @@ library(tidyr)
 library(lubridate)
 library(readr)
 library(dplyr)
-
+library(plotly)
+library(knitr)
 ```
 
 ## Data Imports
 
 ```{r}
 # Base folder paths matching your Windows directory structure
-folder_0021 <- "NACA0021/NACA0021"
-folder_0012 <- "NACA0012/NACA0012"
-folder_0012_exp <- "NACA0012/NACA0012/exp_data"
+folder_0021     <- "C:/Users/mcmilldd/Desktop/MA386/Term Project/NACA0021/NACA0021"
+folder_0012     <- "C:/Users/mcmilldd/Desktop/MA386/Term Project/NACA0012/NACA0012"
+folder_0012_exp <- "C:/Users/mcmilldd/Desktop/MA386/Term Project/NACA0012/NACA0012/exp_data"
 
-# NACA 0021 CFD Files (6 files: Re = 270k and 2000k at AOA = 5, 45, 60)
+# --- 1. NACA 0021 CFD Files (6 files: Re = 270k and 2000k at AOA = 5, 45, 60) ---
 aoa2705  <- read.table(file.path(folder_0021, "Re_270k_aoa_5.dat"),   header = TRUE)
 aoa27045 <- read.table(file.path(folder_0021, "Re_270k_aoa_45.dat"),  header = TRUE)
 aoa27060 <- read.table(file.path(folder_0021, "Re_270k_aoa_60.dat"),  header = TRUE)
@@ -38,22 +44,21 @@ aoa2005  <- read.table(file.path(folder_0021, "Re_2000k_aoa_5.dat"),  header = T
 aoa20045 <- read.table(file.path(folder_0021, "Re_2000k_aoa_45.dat"), header = TRUE)
 aoa20060 <- read.table(file.path(folder_0021, "Re_2000k_aoa_60.dat"), header = TRUE)
 
-# NACA 0012 CFD Files from Subdirectories (6 files at AOA = 5, 45, 60; Re = 2000k)
-# Fine Mesh Tier (251 wall-normal, 121 spanwise)
+# --- 2. NACA 0012 CFD Files from Subdirectories (6 files at AOA = 5, 45, 60; Re = 2000k) ---
 n12_fine_aoa5  <- read.table(file.path(folder_0012, "aoa_5",  "iddes-sou-234-251-121-v2.dat"), header = TRUE)
 n12_fine_aoa45 <- read.table(file.path(folder_0012, "aoa_45", "iddes-sou-234-251-121-v2.dat"), header = TRUE)
 n12_fine_aoa60 <- read.table(file.path(folder_0012, "aoa_60", "iddes-sou-234-251-121-v2.dat"), header = TRUE)
 
-# Medium Mesh Tier (143 wall-normal, 96 spanwise)
 n12_med_aoa5   <- read.table(file.path(folder_0012, "aoa_5",  "iddes-sou-234-143-96-v2.dat"),  header = TRUE)
 n12_med_aoa45  <- read.table(file.path(folder_0012, "aoa_45", "iddes-sou-234-143-96-v2.dat"),  header = TRUE)
 n12_med_aoa60  <- read.table(file.path(folder_0012, "aoa_60", "iddes-sou-234-143-96-v2.dat"),  header = TRUE)
 
-# Experimental Wind Tunnel Polars
-exp_n21_cd_270k  <- read.csv(file.path(folder_0021, "cd_exp_data_Re_270k.txt"), header = FALSE, col.names = c("AOA", "Cd_exp"))
-exp_n21_cl_270k  <- read.csv(file.path(folder_0021, "cl_exp_data_Re_270k.txt"), header = FALSE, col.names = c("AOA", "Cl_exp"))
-exp_n21_cd_2000k <- read.csv(file.path(folder_0021, "cd_exp_data_2000k.txt"),   header = FALSE, col.names = c("AOA", "Cd_exp"))
-exp_n21_cl_2000k <- read.csv(file.path(folder_0021, "cl_exp_data_2000k.txt"),   header = FALSE, col.names = c("AOA", "Cl_exp"))
+# --- 3. Experimental Wind Tunnel Polars ---
+
+exp_n21_cd_270k     <- read.csv(file.path(folder_0021, "cd_exp_data_Re_270k.txt"), header = FALSE, col.names = c("AOA", "Cd_exp"))
+exp_n21_cl_270k     <- read.csv(file.path(folder_0021, "cl_exp_data_Re_270k.txt"), header = FALSE, col.names = c("AOA", "Cl_exp"))
+exp_n21_cd_2000k    <- read.csv(file.path(folder_0021, "cd_exp_data_2000k.txt"),   header = FALSE, col.names = c("AOA", "Cd_exp"))
+exp_n21_cl_2000k    <- read.csv(file.path(folder_0021, "cl_exp_data_2000k.txt"),   header = FALSE, col.names = c("AOA", "Cl_exp"))
 
 exp_n12_cd_sheldahl <- read.csv(file.path(folder_0012_exp, "cd_exp_data_sheldahl.txt"), header = FALSE, col.names = c("AOA", "Cd_exp"))
 exp_n12_cl_sheldahl <- read.csv(file.path(folder_0012_exp, "cl_exp_data_sheldahl.txt"), header = FALSE, col.names = c("AOA", "Cl_exp"))
@@ -62,18 +67,13 @@ exp_n12_cl_sheldahl <- read.csv(file.path(folder_0012_exp, "cl_exp_data_sheldahl
 ## Data Tidying
 
 ```{r}
-## Data Tidying
-
 cfd_tidy <- bind_rows(
-  # NACA 0021 (6 files: Re = 270k & 2000k, Fine Mesh [251-121])
-  aoa2705 |> mutate(Airfoil = "NACA 0021", Re = "270k",  AOA = 5,  Mesh = "Fine"),
-  aoa27045 |> mutate(Airfoil = "NACA 0021", Re = "270k",  AOA = 45, Mesh = "Fine"),
-  aoa27060 |> mutate(Airfoil = "NACA 0021", Re = "270k",  AOA = 60, Mesh = "Fine"),
-  aoa2005 |> mutate(Airfoil = "NACA 0021", Re = "2000k", AOA = 5,  Mesh = "Fine"),
-  aoa20045 |> mutate(Airfoil = "NACA 0021", Re = "2000k", AOA = 45, Mesh = "Fine"),
-  aoa20060 |> mutate(Airfoil = "NACA 0021", Re = "2000k", AOA = 60, Mesh = "Fine"),
-  
-  # NACA 0012 (6 files: Fine & Medium Meshes at Re = 2000k)
+  aoa2705        |> mutate(Airfoil = "NACA 0021", Re = "270k",  AOA = 5,  Mesh = "Fine"),
+  aoa27045       |> mutate(Airfoil = "NACA 0021", Re = "270k",  AOA = 45, Mesh = "Fine"),
+  aoa27060       |> mutate(Airfoil = "NACA 0021", Re = "270k",  AOA = 60, Mesh = "Fine"),
+  aoa2005        |> mutate(Airfoil = "NACA 0021", Re = "2000k", AOA = 5,  Mesh = "Fine"),
+  aoa20045       |> mutate(Airfoil = "NACA 0021", Re = "2000k", AOA = 45, Mesh = "Fine"),
+  aoa20060       |> mutate(Airfoil = "NACA 0021", Re = "2000k", AOA = 60, Mesh = "Fine"),
   n12_fine_aoa5  |> mutate(Airfoil = "NACA 0012", Re = "2000k", AOA = 5,  Mesh = "Fine"),
   n12_fine_aoa45 |> mutate(Airfoil = "NACA 0012", Re = "2000k", AOA = 45, Mesh = "Fine"),
   n12_fine_aoa60 |> mutate(Airfoil = "NACA 0012", Re = "2000k", AOA = 60, Mesh = "Fine"),
@@ -83,10 +83,10 @@ cfd_tidy <- bind_rows(
 ) |>
   mutate(
     Airfoil = factor(Airfoil, levels = c("NACA 0012", "NACA 0021")),
-    Re = factor(Re, levels = c("270k", "2000k")),
+    Re      = factor(Re, levels = c("270k", "2000k")),
     AOA_fac = factor(sprintf("%d°", AOA), levels = c("5°", "45°", "60°")),
-    Mesh = factor(Mesh, levels = c("Medium", "Fine")),
-    Config = sprintf("%s (Re=%s, %s)", Airfoil, Re, Mesh)
+    Mesh    = factor(Mesh, levels = c("Medium", "Fine")),
+    Config  = sprintf("%s (Re=%s, %s)", Airfoil, Re, Mesh)
   )
 ```
 
@@ -96,110 +96,263 @@ cfd_tidy <- bind_rows(
 # Reference scaling factor (Dynamic Pressure * Planform Area)
 q_inf_A <- 5750.0
 
-# Compute aerodynamic force vectors, skin friction ratios, and filter out startup transient
+# Compute aerodynamic force vectors, filter startup transient (Time >= 0.25)
 cfd_aero <- cfd_tidy |>
   filter(Time >= 0.25) |>
   mutate(
     aoa_rad  = AOA * pi / 180,
-    # Total Cartesian Force Vectors (F_x, F_y)
-    F_x = Fpx + Fvx,
-    F_y = Fpy + Fvy,
+    F_x      = Fpx + Fvx,
+    F_y      = Fpy + Fvy,
     Fx_total = F_x,
     Fy_total = F_y,
-    # Pressure and Viscous Force Magnitudes & Skin Friction Ratio
-    Fp_mag = sqrt(Fpx^2 + Fpy^2),
-    Fv_mag = sqrt(Fvx^2 + Fvy^2),
+    Fp_mag   = sqrt(Fpx^2 + Fpy^2),
+    Fv_mag   = sqrt(Fvx^2 + Fvy^2),
     Skin_Friction_Ratio_Mag = Fv_mag / (Fp_mag + Fv_mag),
-    # Rotate Cartesian forces into freestream Drag and Lift (Newtons)
-    Drag_N =  F_x * cos(aoa_rad) + F_y * sin(aoa_rad),
-    Lift_N = -F_x * sin(aoa_rad) + F_y * cos(aoa_rad),
-    # Non-dimensionalize into aerodynamic coefficients
-    Cd = Drag_N / q_inf_A,
-    Cl = Lift_N / q_inf_A
+    Drag_N   =  F_x * cos(aoa_rad) + F_y * sin(aoa_rad),
+    Lift_N   = -F_x * sin(aoa_rad) + F_y * cos(aoa_rad),
+    Cd       = Drag_N / q_inf_A,
+    Cl       = Lift_N / q_inf_A
   )
 
 aero_summary <- cfd_aero |>
-  group_by(Airfoil, Re, AOA, AOA_fac, Mesh) |>
+  group_by(Airfoil, Re, AOA, AOA_fac, Mesh, Config) |>
   summarize(
     Mean_Fx = mean(F_x, na.rm = TRUE),
     Mean_Fy = mean(F_y, na.rm = TRUE),
     Mean_Skin_Ratio = mean(Skin_Friction_Ratio_Mag, na.rm = TRUE),
     Mean_Cl = mean(Cl, na.rm = TRUE),
-    Var_Cl = var(Cl, na.rm = TRUE),
-    SD_Cl = sd(Cl, na.rm = TRUE),
+    Var_Cl  = var(Cl, na.rm = TRUE),
+    SD_Cl   = sd(Cl, na.rm = TRUE),
     Mean_Cd = mean(Cd, na.rm = TRUE),
-    Var_Cd = var(Cd, na.rm = TRUE),
-    SD_Cd = sd(Cd, na.rm = TRUE),
+    Var_Cd  = var(Cd, na.rm = TRUE),
+    SD_Cd   = sd(Cd, na.rm = TRUE),
     Mean_Mz = mean(Mtz, na.rm = TRUE),
-    Var_Mz = var(Mtz, na.rm = TRUE),
+    Var_Mz  = var(Mtz, na.rm = TRUE),
     N_Steps = n(),
     .groups = "drop"
   )
 
-glimpse(aero_summary)
+
+kable(
+  aero_summary |>
+    select(Airfoil, Re, AOA, Mesh, Mean_Fx, Mean_Fy, Mean_Cl, SD_Cl, Mean_Cd, SD_Cd, N_Steps),
+  digits  = 4)
 ```
 
 ## Exploratory Data Analysis Plots
 
 ```{r}
-# Reshape F_x and F_y for multi-panel time-series visualization
+# Time-Series Histories
 cfd_aero |>
   filter(Mesh == "Fine") |>
   pivot_longer(cols = c(F_x, F_y), names_to = "Force_Vector", values_to = "Force_N") |>
   ggplot(aes(x = Time, y = Force_N, color = interaction(Airfoil, Re, sep = " | Re="))) +
   geom_line(linewidth = 0.55, alpha = 0.85) +
   facet_grid(AOA_fac ~ Force_Vector, scales = "free_y") +
-  labs(
-    title = "Time-Series Histories of Total Force Vectors (F_x and F_y)",
-    subtitle = "Comparison across Airfoil Geometry, Reynolds Number, and Angle of Attack (Fine Mesh)",
-    x = "Simulation Time (s)",
-    y = "Total Force (N)",
-    color = "Configuration"
-  ) +
-  theme_minimal()
+  scale_color_brewer(palette = "Dark2") +
+  labs(title = "Time-Series Histories of Total Force Vectors (F_x and F_y)", color = "Configuration") +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "bottom")
 
-# Density Distribution Curves of Total Normal Force (F_y)
+# Density Distribution Curves
 cfd_aero |>
   filter(Mesh == "Fine") |>
   ggplot(aes(x = F_y, fill = interaction(Airfoil, Re, sep = " | Re="), color = interaction(Airfoil, Re, sep = " | Re="))) +
   geom_density(alpha = 0.35, linewidth = 0.8) +
   facet_wrap(~ AOA_fac, scales = "free", ncol = 3) +
-  labs(
-    title = "Density Distribution Curves of Total Normal Force (F_y)",
-    subtitle = "Demonstrating narrow unimodal distributions at 5° vs. broad, vortex-shedding distributions at 45° and 60°",
-    x = "Total Force Vector F_y (N)",
-    y = "Probability Density",
-    fill = "Airfoil & Re",
-    color = "Airfoil & Re"
-  ) +
-  theme_minimal()
+  scale_fill_brewer(palette = "Set1") +
+  scale_color_brewer(palette = "Set1") +
+  labs(title = "Density Distribution Curves of Total Normal Force (F_y)", fill = "Airfoil & Re", color = "Airfoil & Re") +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "bottom")
 
-# Commparison of Pressure vs. Viscous Force Magnitudes
+# Pressure Force vs. Viscous Skin Friction Force
 cfd_aero |>
   ggplot(aes(x = Fp_mag, y = Fv_mag, color = Config)) +
   geom_point(alpha = 0.4, size = 1.2) +
   facet_wrap(~ AOA_fac, scales = "free") +
-  scale_x_continuous(
-  n.breaks = 4,
-  labels   = scales::label_number(scale = 1e-3, suffix = "k"))+
-  labs(
-    title = "Pressure Force (||F_p||) vs. Viscous Skin Friction Force (||F_v||)",
-    subtitle = "Phase distribution across all 12 simulation cases partitioned by Angle of Attack",
-    x = "Resultant Pressure Force Magnitude ||F_p|| (N)",
-    y = "Resultant Viscous Force Magnitude ||F_v|| (N)",
-    color = "Dataset Configuration"
-  ) + theme_minimal()
+  scale_color_brewer(palette = "Paired") +
+  labs(title = "Pressure Force (||F_p||) vs. Viscous Skin Friction Force (||F_v||)", color = "Dataset Configuration") +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "bottom")
 
-
-
-# Skin Friction Ratio comparison across Angles of Attack
+# Skin Friction Contribution Ratio
 cfd_aero |>
   ggplot(aes(x = AOA_fac, y = Skin_Friction_Ratio_Mag * 100, fill = Config)) +
   geom_boxplot(outlier.size = 0.5, alpha = 0.85) +
   scale_y_log10() +
+  scale_fill_brewer(palette = "Paired") +
+  labs(title = "Skin Friction Contribution Ratio Across Angles of Attack", y = "Skin Friction Ratio (%) [Log10 Scale]", fill = "Dataset Configuration") +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "bottom")
+```
+
+## Relational Joins & Baseline Error Metrics
+
+```{r}
+clean_exp <- function(df, coef_name) {
+  if (is.character(df$AOA) || all(is.na(df[[2]]))) {
+    lines <- trimws(gsub(",", " ", as.character(df$AOA)))
+    lines <- lines[grepl("^[+-]?[0-9]", lines)]
+    df <- read.table(text = lines, header = FALSE, col.names = c("AOA", coef_name))
+  }
+  df |>
+    mutate(
+      AOA = round(as.numeric(AOA), 1),
+      across(all_of(coef_name), as.numeric)
+    ) |>
+    filter(!is.na(AOA)) |>
+    distinct(AOA, .keep_all = TRUE)
+}
+
+# Combine experimental polars into unified reference dataframe (exp_data)
+exp_data <- bind_rows(
+  inner_join(clean_exp(exp_n21_cl_270k, "Cl_exp"),     clean_exp(exp_n21_cd_270k, "Cd_exp"),     by = "AOA") |> mutate(Airfoil = "NACA 0021", Re = "270k"),
+  inner_join(clean_exp(exp_n21_cl_2000k, "Cl_exp"),    clean_exp(exp_n21_cd_2000k, "Cd_exp"),    by = "AOA") |> mutate(Airfoil = "NACA 0021", Re = "2000k"),
+  inner_join(clean_exp(exp_n12_cl_sheldahl, "Cl_exp"), clean_exp(exp_n12_cd_sheldahl, "Cd_exp"), by = "AOA") |> mutate(Airfoil = "NACA 0012", Re = "2000k")
+) |>
+  mutate(
+    Airfoil = factor(Airfoil, levels = c("NACA 0012", "NACA 0021")),
+    Re      = factor(Re, levels = c("270k", "2000k"))
+  )
+
+# Relational join matching CFD summary cases with experimental polars at AOA = 5, 45, 60
+validation_joined <- aero_summary |>
+  inner_join(exp_data, by = c("Airfoil", "Re", "AOA")) |>
+  mutate(
+    Cl_Error     = Mean_Cl - Cl_exp,
+    Cd_Error     = Mean_Cd - Cd_exp,
+    Cl_Abs_Error = abs(Cl_Error),
+    Cd_Abs_Error = abs(Cd_Error),
+    Cl_Pct_Error = (Cl_Abs_Error / abs(Cl_exp)) * 100,
+    Cd_Pct_Error = (Cd_Abs_Error / abs(Cd_exp)) * 100
+  )
+
+kable(
+  validation_joined |>
+    select(Airfoil, Re, AOA, Mesh, Mean_Cl, Cl_exp, Cl_Error, Mean_Cd, Cd_exp, Cd_Error),
+  digits  = 4,
+  caption = "Table 2: Relational Join of Time-Averaged CFD Predictions vs. Experimental Wind Tunnel Polars"
+)
+
+# Error metrics grouped by Airfoil, Reynolds Number, and Mesh Tier
+error_by_config <- validation_joined |>
+  group_by(Airfoil, Re, Mesh) |>
+  summarize(
+    RMSE_Cl = sqrt(mean(Cl_Error^2, na.rm = TRUE)),
+    MAE_Cl  = mean(Cl_Abs_Error, na.rm = TRUE),
+    RMSE_Cd = sqrt(mean(Cd_Error^2, na.rm = TRUE)),
+    MAE_Cd  = mean(Cd_Abs_Error, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+kable(
+  error_by_config,
+  digits  = 4,
+  caption = "Table 3: Baseline CFD Prediction Error (RMSE & MAE) by Configuration"
+)
+
+# Error metrics grouped by Flow Regime (Angle of Attack)
+error_by_aoa <- validation_joined |>
+  group_by(AOA_fac) |>
+  summarize(
+    RMSE_Cl     = sqrt(mean(Cl_Error^2, na.rm = TRUE)),
+    MAE_Cl      = mean(Cl_Abs_Error, na.rm = TRUE),
+    Mean_Pct_Cl = mean(Cl_Pct_Error, na.rm = TRUE),
+    RMSE_Cd     = sqrt(mean(Cd_Error^2, na.rm = TRUE)),
+    MAE_Cd      = mean(Cd_Abs_Error, na.rm = TRUE),
+    Mean_Pct_Cd = mean(Cd_Pct_Error, na.rm = TRUE),
+    .groups     = "drop"
+  )
+
+kable(
+  error_by_aoa,
+  digits  = 4,
+  caption = "Table 4: Baseline CFD Prediction Error (RMSE & MAE) Across Angles of Attack"
+)
+```
+
+
+
+## Interactive Polar Validation ($C_L$ & $C_D$)
+
+```{r}
+exp_long <- exp_data |>
+  filter(AOA <= 70) |>
+  pivot_longer(cols = c(Cl_exp, Cd_exp), names_to = "Metric", values_to = "Exp_Value") |>
+  mutate(
+    Metric     = ifelse(Metric == "Cl_exp", "Lift Coefficient (Cl)", "Drag Coefficient (Cd)"),
+    Exp_Series = sprintf("Exp Benchmark: %s (Re=%s)", Airfoil, Re),
+    Hover_Exp  = sprintf("<b>%s</b><br>AOA: %.1f°<br>Benchmark: %.3f", Exp_Series, AOA, Exp_Value)
+  )
+
+cfd_long <- validation_joined |>
+  pivot_longer(cols = c(Mean_Cl, Mean_Cd), names_to = "Metric", values_to = "CFD_Value") |>
+  mutate(
+    SD_Val    = ifelse(Metric == "Mean_Cl", SD_Cl, SD_Cd),
+    Exp_Ref   = ifelse(Metric == "Mean_Cl", Cl_exp, Cd_exp),
+    Err_Val   = ifelse(Metric == "Mean_Cl", Cl_Error, Cd_Error),
+    Metric    = ifelse(Metric == "Mean_Cl", "Lift Coefficient (Cl)", "Drag Coefficient (Cd)"),
+    Hover_CFD = sprintf(
+      "<b>CFD: %s</b><br>AOA: %d°<br>CFD Mean: %.3f (±%.3f)<br>Exp Benchmark: %.3f<br>Error: %+.3f",
+      Config, AOA, CFD_Value, SD_Val, Exp_Ref, Err_Val
+    )
+  )
+
+p_polar <- ggplot() +
+  geom_line(
+    data = exp_long, aes(x = AOA, y = Exp_Value, color = Exp_Series, group = Exp_Series, text = Hover_Text),
+    linetype = "dashed", linewidth = 0.75
+  ) +
+  geom_errorbar(
+    data = cfd_long, aes(x = AOA, ymin = CFD_Value - SD_Val, ymax = CFD_Value + SD_Val, color = Config),
+    width = 1.8, alpha = 0.7
+  ) +
+  geom_point(
+    data = cfd_long, aes(x = AOA, y = CFD_Value, color = Config, text = Hover_CFD),
+    size = 3
+  ) +
+  facet_wrap(~ Metric, scales = "free_y") +
   labs(
-    title = "Skin Friction Contribution Ratio Across Angles of Attack (Log-Scale)",
-    subtitle = "Percentage of total aerodynamic load attributable to viscous shear stress: ||F_v|| / (||F_p|| + ||F_v||)",
-    x = "Angle of Attack",
-    y = "Skin Friction Ratio (%) [Log_10 Scale]") + theme_minimal()
+    title = "Interactive CFD Predictions vs. Wind Tunnel Benchmark Polars",
+    x = "Angle of Attack (Degrees)",
+    y = "Aerodynamic Coefficient",
+    color = "Legend"
+  ) +
+  theme_minimal()
+ggplotly(p_polar_val, tooltip = "text", height = 520) |>
+  layout(
+    margin = list(b = 110, t = 60),
+    legend = list(orientation = "l", x = 0, y = -0.25)
+  )
+
+```
+
+## Interactive Time-Series Explorer ($C_L$)
+
+```{r}
+cfd_ts_sub <- cfd_aero |>
+  group_by(Airfoil, Re, AOA, Mesh) |>
+  slice(seq(1, n(), by = 10)) |>
+  ungroup() |>
+  mutate(
+    Hover_Info = sprintf("<b>%s</b><br>AOA: %s<br>Time: %.3f s<br>Cl: %.3f<br>Cd: %.3f", Config, AOA_fac, Time, Cl, Cd)
+  )
+
+p_ts <- ggplot(
+  cfd_ts_sub,
+  aes(x = Time, y = Cl, color = Config, group = Config, text = Hover_Info)
+) +
+  geom_line(linewidth = 0.5, alpha = 0.85) +
+  facet_wrap(~ AOA_fac, scales = "free_y", ncol = 1) +
+  labs(
+    title = "Interactive Unsteady Lift Coefficient (Cl) Explorer",
+    x = "Simulation Time (s)",
+    y = "Lift Coefficient (Cl)",
+    color = "Configuration"
+  ) +
+  theme_minimal()
+
+ggplotly(p_ts, tooltip = "text", height = 700) |> 
+  layout(legend = list(title = list(text = "<b>Click to Toggle Lines:</b>")))
 ```
