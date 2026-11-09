@@ -1,10 +1,6 @@
 ---
 title: "CFD Project"
-format: 
-  html:
-    theme: cosmo
-    toc: true
-    code-fold: show
+format: html
 author: Donovan McMillan
 editor: visual
 execute:
@@ -14,7 +10,11 @@ execute:
 
 ## Introduction
 
-The goal of this project is to perform a statistical analysis of a High-Fidelity Simulation Aerodynamics Dataset of NACA 0012 and 0021 airfoils. The primary goal of this project is to evaluate how geometric thickness (NACA 0012 vs. NACA 0021) and flow conditions interact to influence load vector fluctuations. An additional analysis will be done to evaluate how simulation mesh resolution (medium, fine) of NACA 0012 affects prediction error relative to experimental wind tunnel benchmarks.
+Predicting the forces on an airplane wing or wind turbine blade becomes highly complex when the object is tilted at a steep angle. At low angles (e.g., $5^\circ$), the air flows smoothly over the surface, producing steady lift and low drag. However, as the angle becomes too steep (e.g., $45^\circ$ or $60^\circ$), the smooth airflow detaches from the surface. This physical transition is known as "stall." In deep stall, the airflow becomes highly turbulent, creating unpredictable fluctuations in the forces acting on the airfoil.
+
+The primary objective of this statistical report is to validate the accuracy of a computational fluid dynamics (CFD) simulation against physical wind tunnel data.
+
+This analysis evaluates two wing shapes (**NACA 0012** and **NACA 0021**), across two flow speeds (Reynolds numbers $Re = 2.7 \times 10^5$ and $2.0 \times 10^6$), at three critical angles of attack ($5^\circ$, $45^\circ$, and $60^\circ$). Using wild bootstrapping and 2-way anova this study will statistically demonstrate that Angle of Attack is the overwhelmingly dominant factor driving these unsteady force fluctuations, establishing the baseline flow regime.
 
 ```{r}
 # Load Libraries
@@ -64,6 +64,8 @@ exp_n12_cd_sheldahl <- read.csv(file.path(folder_0012_exp, "cd_exp_data_sheldahl
 exp_n12_cl_sheldahl <- read.csv(file.path(folder_0012_exp, "cl_exp_data_sheldahl.txt"), header = FALSE, col.names = c("AOA", "Cl_exp"))
 ```
 
+
+
 ## Data Tidying
 
 ```{r}
@@ -92,13 +94,15 @@ cfd_tidy <- bind_rows(
 
 ## Aerodynamics Adjustment and Analysis
 
+Before conducting formal statistical inference, the raw physical force data must be non-diemensionalized. The Spatial force componenets are simplified into pressure ($F_p$) and viscous skin friction ($F_v$) components aligned with the global freestream axes. Total drag ($F_x$) and total lift ($F_y$) are calculated by simply summing the pressure and viscous components along their respective axes.To accurately capture the true aerodynamic variance, the first 1.25 seconds of simulation time is filtered out. This removal truncates the numerical "startup transient" ensuring the statistical models only evaluate the fully developed physical flow regime. The resultant forces are then non-dimensionalized into Lift ($C_L$) and Drag ($C_D$) coefficients using the reference dynamic pressure and planform area ($q_\infty A = 5750.0$).
+
 ```{r}
 # Reference scaling factor (Dynamic Pressure * Planform Area)
 q_inf_A <- 5750.0
 
 # Compute aerodynamic force vectors, filter startup transient (Time >= 0.25)
 cfd_aero <- cfd_tidy |>
-  filter(Time >= 0.25) |>
+  filter(Time >= 1.25) |>
   mutate(
     aoa_rad  = AOA * pi / 180,
     F_x      = Fpx + Fvx,
@@ -108,12 +112,12 @@ cfd_aero <- cfd_tidy |>
     Fp_mag   = sqrt(Fpx^2 + Fpy^2),
     Fv_mag   = sqrt(Fvx^2 + Fvy^2),
     Skin_Friction_Ratio_Mag = Fv_mag / (Fp_mag + Fv_mag),
-    Drag_N   =  F_x * cos(aoa_rad) + F_y * sin(aoa_rad),
-    Lift_N   = -F_x * sin(aoa_rad) + F_y * cos(aoa_rad),
+    # Nalu-Wind forces are already in the freestream wind frame (no rotation needed)
+    Drag_N   = F_x,
+    Lift_N   = F_y,
     Cd       = Drag_N / q_inf_A,
     Cl       = Lift_N / q_inf_A
   )
-
 aero_summary <- cfd_aero |>
   group_by(Airfoil, Re, AOA, AOA_fac, Mesh, Config) |>
   summarize(
@@ -128,18 +132,19 @@ aero_summary <- cfd_aero |>
     SD_Cd   = sd(Cd, na.rm = TRUE),
     Mean_Mz = mean(Mtz, na.rm = TRUE),
     Var_Mz  = var(Mtz, na.rm = TRUE),
-    N_Steps = n(),
     .groups = "drop"
   )
 
 
 kable(
   aero_summary |>
-    select(Airfoil, Re, AOA, Mesh, Mean_Fx, Mean_Fy, Mean_Cl, SD_Cl, Mean_Cd, SD_Cd, N_Steps),
+    select(Airfoil, Re, AOA, Mesh, Mean_Fx, Mean_Fy, Mean_Cl, SD_Cl, Mean_Cd, SD_Cd),
   digits  = 4)
 ```
 
 ## Exploratory Data Analysis Plots
+
+The exploratory data analysis is used to confirm the fundamental fluid transition between attached flow and bluff-body aerodynamics. At a $5^\circ$ angle of attack, the time-series traces exhibit flat, steady-state behavior with near-zero variance, reflecting a stable, attached boundary layer. As a result, the density distribution curves for $5^\circ$ are narrow and highly unimodal.However, as the airfoils pitch to $45^\circ$ and $60^\circ$, severe adverse pressure gradients force the boundary layer to detach. The time-series plots reveal violent, high-amplitude force fluctuations caused by the alternating shedding of von Kármán vortex streets in the wake. Furthermore, the skin friction ratio analysis demonstrates that while viscous forces contribute meaningfully during streamlined flight ($5^\circ$), pressure drag overwhelmingly dominates the aerodynamic load profile during deep stall.
 
 ```{r}
 # Time-Series Histories
@@ -149,8 +154,13 @@ cfd_aero |>
   ggplot(aes(x = Time, y = Force_N, color = interaction(Airfoil, Re, sep = " | Re="))) +
   geom_line(linewidth = 0.55, alpha = 0.85) +
   facet_grid(AOA_fac ~ Force_Vector, scales = "free_y") +
-  scale_color_brewer(palette = "Dark2") +
-  labs(title = "Time-Series Histories of Total Force Vectors (F_x and F_y)", color = "Configuration") +
+  labs(
+    title = "Time-Series Histories of Total Force Vectors (F_x and F_y)",
+    subtitle = "Comparison across Airfoil Geometry, Reynolds Number, and Angle of Attack (Fine Mesh)",
+    x = "Simulation Time (s)",
+    y = "Total Force (N)",
+    color = "Configuration"
+  ) +
   theme_minimal(base_size = 12) +
   theme(legend.position = "bottom")
 
@@ -160,29 +170,31 @@ cfd_aero |>
   ggplot(aes(x = F_y, fill = interaction(Airfoil, Re, sep = " | Re="), color = interaction(Airfoil, Re, sep = " | Re="))) +
   geom_density(alpha = 0.35, linewidth = 0.8) +
   facet_wrap(~ AOA_fac, scales = "free", ncol = 3) +
-  scale_fill_brewer(palette = "Set1") +
-  scale_color_brewer(palette = "Set1") +
-  labs(title = "Density Distribution Curves of Total Normal Force (F_y)", fill = "Airfoil & Re", color = "Airfoil & Re") +
+  labs(
+    title = "Density Distribution Curves of Total Normal Force (F_y)",
+    subtitle = "Demonstrating narrow unimodal distributions at 5° vs. broad, vortex-shedding distributions at 45° and 60°",
+    x = "Total Force Vector F_y (N)",
+    y = "Probability Density",
+    fill = "Airfoil & Re",
+    color = "Airfoil & Re"
+  ) +
   theme_minimal(base_size = 12) +
-  theme(legend.position = "bottom")
+  theme(legend.position = "bottom", strip.text = element_text(face = "bold", size = 11))
 
-# Pressure Force vs. Viscous Skin Friction Force
-cfd_aero |>
-  ggplot(aes(x = Fp_mag, y = Fv_mag, color = Config)) +
-  geom_point(alpha = 0.4, size = 1.2) +
-  facet_wrap(~ AOA_fac, scales = "free") +
-  scale_color_brewer(palette = "Paired") +
-  labs(title = "Pressure Force (||F_p||) vs. Viscous Skin Friction Force (||F_v||)", color = "Dataset Configuration") +
-  theme_minimal(base_size = 12) +
-  theme(legend.position = "bottom")
 
-# Skin Friction Contribution Ratio
+# 4. Skin Friction Ratio comparison across Angles of Attack
 cfd_aero |>
   ggplot(aes(x = AOA_fac, y = Skin_Friction_Ratio_Mag * 100, fill = Config)) +
   geom_boxplot(outlier.size = 0.5, alpha = 0.85) +
   scale_y_log10() +
-  scale_fill_brewer(palette = "Paired") +
-  labs(title = "Skin Friction Contribution Ratio Across Angles of Attack", y = "Skin Friction Ratio (%) [Log10 Scale]", fill = "Dataset Configuration") +
+  labs(
+    title = "Skin Friction Contribution Ratio Across Angles of Attack (Log-Scale)",
+    subtitle = "Percentage of total aerodynamic load attributable to viscous shear stress: ||F_v|| / (||F_p|| + ||F_v||)",
+    x = "Angle of Attack",
+    y = "Skin Friction Ratio (%) [Log10 Scale]",
+    fill = "Configuration"
+  ) +
+  guides(fill = guide_legend(nrow = 2)) +
   theme_minimal(base_size = 12) +
   theme(legend.position = "bottom")
 ```
@@ -216,12 +228,13 @@ exp_data <- bind_rows(
     Re      = factor(Re, levels = c("270k", "2000k"))
   )
 
+
 # Relational join matching CFD summary cases with experimental polars at AOA = 5, 45, 60
 validation_joined <- aero_summary |>
   inner_join(exp_data, by = c("Airfoil", "Re", "AOA")) |>
   mutate(
-    Cl_Error     = Mean_Cl - Cl_exp,
-    Cd_Error     = Mean_Cd - Cd_exp,
+    Cl_Error = Mean_Cl - Cl_exp,
+    Cd_Error = Mean_Cd - Cd_exp,
     Cl_Abs_Error = abs(Cl_Error),
     Cd_Abs_Error = abs(Cd_Error),
     Cl_Pct_Error = (Cl_Abs_Error / abs(Cl_exp)) * 100,
@@ -272,7 +285,7 @@ kable(
 )
 ```
 
-
+To quantitatively evaluate the accuracy of the high-fidelity CFD solver, the time-averaged simulation metrics were relationally joined to physical wind tunnel benchmark polars. Grouping the error metrics by configuration provides a direct proxy for evaluating grid convergence. As demonstrated by the baseline error tables, refining the spatial mesh resolution from Medium to Fine on the NACA 0012 airfoil significantly improved accuracy, reducing the Lift Coefficient Root Mean Square Error (RMSE) from $0.0681$ to $0.0401$. Furthermore, the aggregate error metrics confirm that solver prediction error scales with flow separation. The absolute RMSE for $C_L$ is highest at the extreme $60^\circ$ stall angle ($0.0673$) compared to the fully attached $5^\circ$ flow ($0.0414$).
 
 ## Interactive Polar Validation ($C_L$ & $C_D$)
 
@@ -283,50 +296,32 @@ exp_long <- exp_data |>
   mutate(
     Metric     = ifelse(Metric == "Cl_exp", "Lift Coefficient (Cl)", "Drag Coefficient (Cd)"),
     Exp_Series = sprintf("Exp Benchmark: %s (Re=%s)", Airfoil, Re),
-    Hover_Exp  = sprintf("<b>%s</b><br>AOA: %.1f°<br>Benchmark: %.3f", Exp_Series, AOA, Exp_Value)
+    Hover_Text = sprintf("<b>%s</b><br>AOA: %.1f°<br>Benchmark: %.3f", Exp_Series, AOA, Exp_Value)
   )
 
 cfd_long <- validation_joined |>
   pivot_longer(cols = c(Mean_Cl, Mean_Cd), names_to = "Metric", values_to = "CFD_Value") |>
   mutate(
-    SD_Val    = ifelse(Metric == "Mean_Cl", SD_Cl, SD_Cd),
-    Exp_Ref   = ifelse(Metric == "Mean_Cl", Cl_exp, Cd_exp),
-    Err_Val   = ifelse(Metric == "Mean_Cl", Cl_Error, Cd_Error),
-    Metric    = ifelse(Metric == "Mean_Cl", "Lift Coefficient (Cl)", "Drag Coefficient (Cd)"),
-    Hover_CFD = sprintf(
-      "<b>CFD: %s</b><br>AOA: %d°<br>CFD Mean: %.3f (±%.3f)<br>Exp Benchmark: %.3f<br>Error: %+.3f",
-      Config, AOA, CFD_Value, SD_Val, Exp_Ref, Err_Val
-    )
+    SD_Val     = ifelse(Metric == "Mean_Cl", SD_Cl, SD_Cd),
+    Exp_Ref    = ifelse(Metric == "Mean_Cl", Cl_exp, Cd_exp),
+    Metric     = ifelse(Metric == "Mean_Cl", "Lift Coefficient (Cl)", "Drag Coefficient (Cd)"),
+    CFD_Series = sprintf("CFD: %s", Config),
+    Hover_CFD  = sprintf("<b>%s</b><br>AOA: %d°<br>CFD Mean: %.3f (±%.3f)<br>Exp: %.3f", CFD_Series, AOA, CFD_Value, SD_Val, Exp_Ref)
   )
 
 p_polar <- ggplot() +
-  geom_line(
-    data = exp_long, aes(x = AOA, y = Exp_Value, color = Exp_Series, group = Exp_Series, text = Hover_Text),
-    linetype = "dashed", linewidth = 0.75
-  ) +
-  geom_errorbar(
-    data = cfd_long, aes(x = AOA, ymin = CFD_Value - SD_Val, ymax = CFD_Value + SD_Val, color = Config),
-    width = 1.8, alpha = 0.7
-  ) +
-  geom_point(
-    data = cfd_long, aes(x = AOA, y = CFD_Value, color = Config, text = Hover_CFD),
-    size = 3
-  ) +
+  geom_line(data = exp_long, aes(x = AOA, y = Exp_Value, color = Exp_Series, group = Exp_Series, text = Hover_Text), linetype = "dashed", linewidth = 0.75) +
+  geom_errorbar(data = cfd_long, aes(x = AOA, ymin = CFD_Value - SD_Val, ymax = CFD_Value + SD_Val, color = CFD_Series), width = 1.8, alpha = 0.7) +
+  geom_point(data = cfd_long, aes(x = AOA, y = CFD_Value, color = CFD_Series, text = Hover_CFD), size = 3) +
   facet_wrap(~ Metric, scales = "free_y") +
-  labs(
-    title = "Interactive CFD Predictions vs. Wind Tunnel Benchmark Polars",
-    x = "Angle of Attack (Degrees)",
-    y = "Aerodynamic Coefficient",
-    color = "Legend"
-  ) +
+  labs(title = "Interactive CFD Predictions vs. Wind Tunnel Polars", x = "Angle of Attack (Degrees)", y = "Aerodynamic Coefficient", color = "Series") +
   theme_minimal()
-ggplotly(p_polar_val, tooltip = "text", height = 520) |>
-  layout(
-    margin = list(b = 110, t = 60),
-    legend = list(orientation = "l", x = 0, y = -0.25)
-  )
 
+ggplotly(p_polar, tooltip = "text", height = 550) |> 
+  layout(legend = list(orientation = "h", y = -0.2))
 ```
+
+The interactive visualizations below map the steady-state CFD predictions against the established experimental wind tunnel polars. While the Fine mesh captures the overarching lift and drag trends accurately at lower angles of attack, deviation increases during massive separation. Use the legend to toggle specific spatial grid configurations to visualize how heavily wake resolution impacts baseline drag prediction at $60^\circ$
 
 ## Interactive Time-Series Explorer ($C_L$)
 
@@ -354,5 +349,87 @@ p_ts <- ggplot(
   theme_minimal()
 
 ggplotly(p_ts, tooltip = "text", height = 700) |> 
-  layout(legend = list(title = list(text = "<b>Click to Toggle Lines:</b>")))
+  layout(legend = list(title = list(text = "<b>Configuration(Re, Mesh)</b>")))
 ```
+
+## Statistical Analysis & Hypothesis Testing
+
+Before conducting formal inference, a controlled baseline. was set (Re = 2000k, Fine Mesh) and fit a 2-Way ANOVA model predicting the log-transformed unsteady lift variance ($\log_{10}(\text{Var}(C_L))$).
+
+2-Way ANOVA with log-transformed Unsteady Lift Variance ($\log_{10}(\text{Var}(C_L))$) as the response, and Angle of Attack and Airfoil Geometry as categorical predictors.
+
+$H_0:$ Angle of Attack and Airfoil Geometry have no significant effect on unsteady lift variance ($\beta_i = 0$). $H_1:$ Angle of Attack and Airfoil Geometry significantly drive unsteady lift variance ($\beta_i \neq 0$).
+
+### Calculate the original test statistic values
+
+```{r ANOVA_TestStat}
+aero_model_data <- aero_summary |>
+  filter(Mesh == "Fine" & Re == "2000k") |>
+  mutate(Log10_Var_Cl = log10(Var_Cl))
+
+# Fit the 2-way ANOVA linear model
+aero_anova <- lm(Log10_Var_Cl ~ AOA_fac + Airfoil, data = aero_model_data)
+
+# Obtain original coefficients, fitted values, and residuals
+orig_coefs  <- coef(aero_anova)
+fitted_vals <- fitted(aero_anova)
+orig_resids <- residuals(aero_anova)
+n_obs       <- length(orig_resids)
+```
+
+## Adjust the data for Wild Bootstrapping
+
+Standard diagnostic plots show that residuals for attached flow ($5^\circ$) cluster tightly, while deep stall residuals ($45^\circ$, $60^\circ$) fan out dramatically. This violates the equal-variance assumption of standard parametric ANOVA, so we apply the **Wild Bootstrap**. Unlike a null distribution bootstrap, $H_0$ is not forced to be true. Instead, the local variance of each flow regime is kept by generating random mean-zero weights to scale the original residuals.
+
+```{r ANOVA_AdjustData}
+set.seed(386) 
+RB <- 2000 # Number of bootstrap samples
+
+# Matrix to save bootstrap coefficients
+rb_coefs <- matrix(NA, nrow = RB, ncol = length(orig_coefs))
+colnames(rb_coefs) <- names(orig_coefs)
+```
+
+## Simulate distribution using Wild Bootstrapping
+
+```{r ANOVA_EmpiricalDistn}
+# Implement Wild Bootstrapping for Confidence Intervals
+for (rb in 1:RB) {
+  # a) Generate n independent random variables with mean 0 (w_b ~ N(0,1))
+  w_b <- rnorm(n_obs, mean = 0, sd = 1)
+  
+  # b) Create the wild bootstrap response preserving local heteroscedastic variance
+  rbResponse <- fitted_vals + (w_b * orig_resids)
+  
+  # c) Refit the model on the bootstrap response and save coefficients
+  rbModel <- lm(rbResponse ~ AOA_fac + Airfoil, data = aero_model_data)
+  rb_coefs[rb, ] <- coef(rbModel)
+}
+```
+
+## Calculate the 95% Confidence Intervals
+
+```{r ANOVA_ConfidenceIntervals}
+# Extract the 2.5th and 97.5th empirical percentiles for all parameters
+ci_lower <- apply(rb_coefs, 2, quantile, probs = 0.025)
+ci_upper <- apply(rb_coefs, 2, quantile, probs = 0.975)
+
+# Use as.numeric() to strip the named attributes so they don't force duplicate text
+wild_boot_results <- data.frame(
+  Term     = names(orig_coefs),
+  Estimate = as.numeric(orig_coefs),
+  CI_Lower = as.numeric(ci_lower),
+  CI_Upper = as.numeric(ci_upper)
+)
+
+# Add row.names = FALSE to kable to prevent the index from printing as a duplicate column
+kable(wild_boot_results, digits = 4, row.names = FALSE, caption = "95% Wild Bootstrap Percentile Confidence Intervals")
+```
+Standard 2-Way ANOVA assumes equal variance (homoscedasticity) across all groups. However, our exploratory plots revealed that the residuals for attached flow ($5^\circ$) are tightly clustered, while deep stall residuals ($45^\circ$ and $60^\circ$) fan out massively. To perform valid inference without violating parametric assumptions, a Wild Bootstrap resampling procedure ($B = 2000$) was implemented to preserve local heteroscedasticity.
+
+
+
+The resulting 95% Percentile Confidence Intervals reveal the true physical drivers of aerodynamic variance. Pitching into deep stall at $45^\circ$ and $60^\circ$ significantly increases the log-variance of lift, yielding strictly positive coefficient estimates ($5.9869$ and $5.9397$) with confidence bounds far above zero. In contrast, the airfoil geometry (NACA 0021) yielded an estimate of $-0.0676$ with a 95% Confidence Interval of $[-0.3173, 0.1740]$. Because zero falls squarely within this interval, we fail to reject the null hypothesis for geometric thickness. This definitively proves that Angle of Attack dominates the unsteady variance in deep stall, rendering airfoil thickness statistically insignificant regarding load fluctuations
+
+
+
